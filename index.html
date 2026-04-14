@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Exhibition App</title>
+
+<style>
+body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFont,sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; }
+.app { width:375px; height:812px; background:#111; border-radius:30px; overflow:hidden; position:relative; }
+
+/* Splash */
+.splash { position:absolute; inset:0; background:#0b0b0b; display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:100; animation:fadeOut 1s ease 2.2s forwards; }
+.splash h1 { color:white; font-size:28px; letter-spacing:3px; margin:0; opacity:0; animation:fadeUp 1s ease forwards; }
+.splash p { color:#888; font-size:12px; margin-top:8px; letter-spacing:2px; opacity:0; animation:fadeUp 1s ease 0.4s forwards; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);} }
+@keyframes fadeOut { to{opacity:0;pointer-events:none;} }
+
+/* Pages */
+.gallery { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; scroll-behavior:smooth; -webkit-overflow-scrolling:touch; height:100%; scrollbar-width:none; }
+.gallery::-webkit-scrollbar { display:none; }
+.page { min-width:100%; display:grid; grid-template-columns:repeat(2,1fr); gap:14px; padding:28px 14px 14px; box-sizing:border-box; scroll-snap-align:start; align-content:start; }
+
+/* Cards */
+.card {
+  border-radius:16px; overflow:hidden; background:#1a1a1a;
+  aspect-ratio:1/1; position:relative;
+  -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;
+}
+.card img {
+  position:absolute; inset:0; width:100%; height:100%;
+  object-fit:cover; display:block;
+  -webkit-user-drag:none; pointer-events:none;
+}
+
+/* Video play badge on card */
+.card .play-badge {
+  position:absolute; bottom:7px; right:7px;
+  width:24px; height:24px; border-radius:50%;
+  background:rgba(0,0,0,0.55);
+  backdrop-filter:blur(4px);
+  display:flex; justify-content:center; align-items:center;
+  pointer-events:none;
+}
+.card .play-badge svg { width:11px; height:11px; fill:white; margin-left:1px; }
+
+/* dots */
+.dots { position:absolute; bottom:80px; width:100%; display:flex; justify-content:center; gap:6px; transition:opacity .4s; pointer-events:none; }
+.dot { width:6px; height:6px; border-radius:50%; background:#666; }
+.dot.active { background:#fff; transform:scale(1.4); }
+
+/* viewer */
+.viewer {
+  position:absolute; inset:0; z-index:50;
+  background:rgba(0,0,0,0.95);
+  display:flex; flex-direction:column; justify-content:center; align-items:center;
+  opacity:0; pointer-events:none;
+  transform:scale(0.95);
+  transition:opacity .35s ease, transform .35s cubic-bezier(.2,1.2,.3,1);
+}
+.viewer.active { opacity:1; pointer-events:all; transform:scale(1); }
+
+.viewer-media-wrap {
+  width:100%; display:flex; justify-content:center; align-items:center;
+}
+.viewer-media-wrap img {
+  width:100%; max-height:75vh; object-fit:contain;
+  display:block; pointer-events:none; -webkit-user-drag:none;
+}
+.viewer-media-wrap video {
+  width:100%; max-height:75vh; object-fit:contain;
+  display:block; background:#000;
+  border-radius:4px;
+}
+.viewer .vtitle { color:#fff; margin-top:12px; font-size:14px; letter-spacing:1px; pointer-events:none; }
+.viewer .vdesc  { color:#aaa; padding:8px 16px; text-align:center; font-size:12px; pointer-events:none; }
+.viewer-hint {
+  position:absolute; top:18px; left:0; right:0;
+  text-align:center; color:rgba(255,255,255,0.2);
+  font-size:11px; letter-spacing:1px; pointer-events:none;
+}
+
+/* modal */
+.inputModal { position:absolute; inset:0; background:rgba(0,0,0,.7); display:none; justify-content:center; align-items:center; z-index:60; }
+.inputBox { background:#1a1a1a; padding:20px; border-radius:16px; width:80%; }
+.inputBox input, .inputBox textarea { width:100%; margin-bottom:10px; padding:10px; border-radius:10px; border:none; background:#2a2a2a; color:#fff; box-sizing:border-box; }
+.inputBox textarea { min-height:70px; resize:none; }
+.inputBox button { width:100%; padding:12px; border:none; border-radius:10px; background:white; font-weight:600; cursor:pointer; }
+
+/* action sheet */
+.actionSheet { position:absolute; bottom:0; width:100%; background:#111; transform:translateY(100%); transition:.4s cubic-bezier(.2,1.3,.3,1); z-index:70; }
+.actionSheet.show { transform:translateY(0); }
+.actionSheet button { padding:16px; background:#1a1a1a; color:white; border:none; border-bottom:1px solid #222; width:100%; font-size:15px; cursor:pointer; }
+.actionSheet button:last-child { color:#888; border-bottom:none; }
+
+/* add btn */
+.addBtn {
+  position:absolute; bottom:50px; left:50%; transform:translateX(-50%);
+  width:21px; height:21px; border-radius:50%;
+  background:white; display:flex; justify-content:center; align-items:center;
+  font-size:12px; transition:opacity .4s;
+  box-shadow:0 0 18px rgba(255,255,255,0.35),0 0 30px rgba(255,255,255,0.15);
+  backdrop-filter:blur(6px); z-index:5; cursor:pointer;
+  -webkit-user-select:none; user-select:none;
+}
+.hiddenUI { opacity:0; pointer-events:none; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="splash">
+    <h1>SEVEN.FOUR.</h1>
+    <p>Works of Mine</p>
+  </div>
+
+  <div class="gallery" id="gallery"></div>
+  <div class="dots" id="dots"></div>
+
+  <div class="viewer" id="viewer">
+    <div class="viewer-hint">tap outside to close · swipe to navigate</div>
+    <div class="viewer-media-wrap" id="viewerMediaWrap"></div>
+    <div class="vtitle" id="viewerTitle"></div>
+    <div class="vdesc"  id="viewerDesc"></div>
+  </div>
+
+  <div class="inputModal" id="inputModal">
+    <div class="inputBox">
+      <input    id="titleInput" placeholder="Title..." />
+      <textarea id="descInput"  placeholder="Description..."></textarea>
+      <button onclick="saveWork()">Save</button>
+    </div>
+  </div>
+
+  <div class="actionSheet" id="actionSheet">
+    <button onclick="moveUp()">Move Up</button>
+    <button onclick="moveDown()">Move Down</button>
+    <button onclick="editItem()">Edit</button>
+    <button onclick="deleteItem()">Delete</button>
+    <button onclick="closeSheet()">Cancel</button>
+  </div>
+
+  <div class="addBtn" id="addBtn" onclick="openFilePicker()">+</div>
+</div>
+
+<script>
+let works = [], tempFile = null, tempFileType = null, selectedIndex = null, editIndex = null;
+let currentViewerIndex = 0, hideTimer;
+
+const gallery   = document.getElementById('gallery');
+const dots      = document.getElementById('dots');
+const addBtn    = document.getElementById('addBtn');
+const viewer    = document.getElementById('viewer');
+const mediaWrap = document.getElementById('viewerMediaWrap');
+const vTitle    = document.getElementById('viewerTitle');
+const vDesc     = document.getElementById('viewerDesc');
+
+/* ── Storage ── */
+function saveStorage(){ try{ localStorage.setItem('works', JSON.stringify(works)); }catch(e){ alert('Storage full — videos are large, try removing some items.'); } }
+function loadStorage(){ const d = localStorage.getItem('works'); if(d) works = JSON.parse(d); }
+
+/* ── Compress image ── */
+function compressImage(file, cb){
+  const img = new Image(), r = new FileReader();
+  r.onload = e => img.src = e.target.result;
+  img.onload = () => {
+    const c = document.createElement('canvas'), ctx = c.getContext('2d');
+    const w = 800, s = w / img.width;
+    c.width = w; c.height = img.height * s;
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    cb(c.toDataURL('image/jpeg', 0.7));
+  };
+  r.readAsDataURL(file);
+}
+
+/*
+ ── Process video ──
+ We store the full video as a base64 data URL (works for short clips).
+ We also grab a thumbnail from the first frame via a hidden <video>+<canvas>.
+ item.type = 'video', item.src = base64 video, item.thumb = base64 jpeg thumbnail
+*/
+function processVideo(file, cb){
+  const reader = new FileReader();
+  reader.onload = e => {
+    const videoSrc = e.target.result; // full base64 video
+
+    // Generate thumbnail from first frame
+    const vid = document.createElement('video');
+    vid.src = videoSrc;
+    vid.muted = true;
+    vid.playsInline = true;
+    vid.currentTime = 0.1;
+
+    vid.addEventListener('loadeddata', () => {
+      // seek to get a real frame
+      vid.currentTime = 0.1;
+    });
+    vid.addEventListener('seeked', () => {
+      const c = document.createElement('canvas');
+      c.width = 400; c.height = 400;
+      const ctx = c.getContext('2d');
+      // centre-crop to square
+      const vw = vid.videoWidth, vh = vid.videoHeight;
+      const side = Math.min(vw, vh);
+      const sx = (vw - side) / 2, sy = (vh - side) / 2;
+      ctx.drawImage(vid, sx, sy, side, side, 0, 0, 400, 400);
+      const thumb = c.toDataURL('image/jpeg', 0.7);
+      cb(videoSrc, thumb);
+    }, {once: true});
+
+    vid.load();
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ── File picker — accepts images AND videos ── */
+function openFilePicker(){
+  const i = document.createElement('input');
+  i.type = 'file';
+  i.accept = 'image/*,video/*';
+  i.onchange = e => {
+    const f = e.target.files[0]; if(!f) return;
+    tempFile = f;
+    tempFileType = f.type.startsWith('video/') ? 'video' : 'image';
+    editIndex = null;
+    document.getElementById('titleInput').value = '';
+    document.getElementById('descInput').value  = '';
+    document.getElementById('inputModal').style.display = 'flex';
+  };
+  i.click();
+}
+
+function saveWork(){
+  const title = document.getElementById('titleInput').value;
+  const desc  = document.getElementById('descInput').value;
+
+  if(tempFile){
+    if(tempFileType === 'video'){
+      processVideo(tempFile, (videoSrc, thumb) => {
+        works.push({ type:'video', src:videoSrc, thumb, title, desc });
+        saveStorage(); render();
+      });
+    } else {
+      compressImage(tempFile, res => {
+        works.push({ type:'image', src:res, title, desc });
+        saveStorage(); render();
+      });
+    }
+  } else if(editIndex !== null){
+    works[editIndex].title = title;
+    works[editIndex].desc  = desc;
+    saveStorage(); render();
+  }
+
+  document.getElementById('inputModal').style.display = 'none';
+  document.getElementById('titleInput').value = '';
+  document.getElementById('descInput').value  = '';
+  tempFile = null; tempFileType = null; editIndex = null;
+}
+
+/* ── Render grid ── */
+function render(){
+  gallery.innerHTML = ''; dots.innerHTML = '';
+  const size = 8;
+  for(let i = 0; i < works.length; i += size){
+    const page = document.createElement('div');
+    page.className = 'page';
+    works.slice(i, i + size).forEach((item, idx) => {
+      const realIndex = i + idx;
+      const card = document.createElement('div'); card.className = 'card';
+
+      // Thumbnail: videos use extracted thumb, images use src directly
+      const img = document.createElement('img');
+      img.src = item.type === 'video' ? item.thumb : item.src;
+      card.appendChild(img);
+
+      // Play badge for videos
+      if(item.type === 'video'){
+        const badge = document.createElement('div'); badge.className = 'play-badge';
+        badge.innerHTML = `<svg viewBox="0 0 10 12"><polygon points="0,0 10,6 0,12"/></svg>`;
+        card.appendChild(badge);
+      }
+
+      attachCardGestures(card, realIndex);
+      page.appendChild(card);
+    });
+    gallery.appendChild(page);
+    const dot = document.createElement('div');
+    dot.className = 'dot'; if(i===0) dot.classList.add('active');
+    dots.appendChild(dot);
+  }
+}
+
+/*
+ ── Card gesture logic ──
+   1. Double-tap (2 taps within 700ms, finger still) → open viewer
+   2. Long press (>=600ms, finger still)             → action sheet
+   3. Swipe LEFT/RIGHT                               → gallery scrolls naturally
+*/
+function attachCardGestures(card, realIndex){
+  let t0x, t0y, longTimer, didLong = false;
+  let lastTapTime = 0, lastTapX = 0, lastTapY = 0;
+
+  card.addEventListener('touchstart', e => {
+    const x = e.touches[0].clientX;
+    const y = e.touches[0].clientY;
+    const now = Date.now();
+    const elapsed = now - lastTapTime;
+    const near = Math.abs(x - lastTapX) < 44 && Math.abs(y - lastTapY) < 44;
+    if(elapsed > 0 && elapsed < 700 && near) e.preventDefault();
+    t0x = x; t0y = y; didLong = false;
+    longTimer = setTimeout(() => {
+      didLong = true; selectedIndex = realIndex;
+      document.getElementById('actionSheet').classList.add('show');
+    }, 600);
+  }, {passive: false});
+
+  card.addEventListener('touchmove', e => {
+    const dx = Math.abs(e.touches[0].clientX - t0x);
+    const dy = Math.abs(e.touches[0].clientY - t0y);
+    if(dx > 8 || dy > 8) clearTimeout(longTimer);
+  }, {passive:true});
+
+  card.addEventListener('touchend', e => {
+    clearTimeout(longTimer);
+    if(didLong) return;
+    const x = e.changedTouches[0].clientX;
+    const y = e.changedTouches[0].clientY;
+    if(Math.abs(x - t0x) > 12 || Math.abs(y - t0y) > 12){ lastTapTime = 0; return; }
+    const now = Date.now();
+    const elapsed = now - lastTapTime;
+    const near = Math.abs(x - lastTapX) < 44 && Math.abs(y - lastTapY) < 44;
+    if(lastTapTime > 0 && elapsed < 700 && near){
+      lastTapTime = 0; openViewer(realIndex);
+    } else {
+      lastTapTime = now; lastTapX = x; lastTapY = y;
+    }
+  }, {passive:true});
+
+  card.addEventListener('dblclick', () => { if(!didLong) openViewer(realIndex); });
+}
+
+/* ── Gallery scroll dots ── */
+gallery.addEventListener('scroll', () => {
+  const idx = Math.round(gallery.scrollLeft / gallery.clientWidth);
+  document.querySelectorAll('.dot').forEach((d,i) => d.classList.toggle('active', i===idx));
+  showUI();
+});
+
+/* ── CRUD ── */
+function moveUp(){
+  if(selectedIndex > 0){ [works[selectedIndex], works[selectedIndex-1]] = [works[selectedIndex-1], works[selectedIndex]]; saveStorage(); render(); } closeSheet();
+}
+function moveDown(){
+  if(selectedIndex < works.length-1){ [works[selectedIndex], works[selectedIndex+1]] = [works[selectedIndex+1], works[selectedIndex]]; saveStorage(); render(); } closeSheet();
+}
+function editItem(){
+  editIndex = selectedIndex; tempFile = null;
+  document.getElementById('titleInput').value = works[selectedIndex].title || '';
+  document.getElementById('descInput').value  = works[selectedIndex].desc  || '';
+  document.getElementById('inputModal').style.display = 'flex';
+  closeSheet();
+}
+function deleteItem(){ works.splice(selectedIndex,1); saveStorage(); render(); closeViewer(); closeSheet(); }
+function closeSheet(){ document.getElementById('actionSheet').classList.remove('show'); }
+
+/* ── Viewer ── */
+function openViewer(index){
+  currentViewerIndex = index;
+  renderViewer();
+  viewer.classList.add('active');
+  showUI();
+}
+function closeViewer(){
+  // Pause any playing video when closing
+  const vid = mediaWrap.querySelector('video');
+  if(vid) vid.pause();
+  viewer.classList.remove('active');
+}
+function renderViewer(){
+  const item = works[currentViewerIndex];
+  mediaWrap.innerHTML = '';
+
+  if(item.type === 'video'){
+    const vid = document.createElement('video');
+    vid.src = item.src;
+    vid.controls = true;
+    vid.playsInline = true;
+    vid.autoplay = true;
+    vid.loop = false;
+    mediaWrap.appendChild(vid);
+  } else {
+    const img = document.createElement('img'); img.src = item.src;
+    mediaWrap.appendChild(img);
+  }
+
+  vTitle.innerText = item.title || '';
+  vDesc.innerText  = item.desc  || '';
+}
+
+/* ── Viewer touch: tap backdrop to close, swipe L/R to navigate ── */
+let vt0x, vt0y, vMoved;
+
+viewer.addEventListener('touchstart', e => {
+  vt0x = e.touches[0].clientX;
+  vt0y = e.touches[0].clientY;
+  vMoved = false;
+}, {passive:true});
+
+viewer.addEventListener('touchmove', e => {
+  if(Math.abs(e.touches[0].clientX - vt0x) > 8 ||
+     Math.abs(e.touches[0].clientY - vt0y) > 8) vMoved = true;
+}, {passive:true});
+
+viewer.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - vt0x;
+  const dy = e.changedTouches[0].clientY - vt0y;
+  const onMedia = mediaWrap === e.target || mediaWrap.contains(e.target);
+
+  if(!vMoved){
+    if(!onMedia) closeViewer();
+    return;
+  }
+  // Don't swipe-navigate if touching video controls
+  if(onMedia && works[currentViewerIndex].type === 'video') return;
+
+  const absDx = Math.abs(dx), absDy = Math.abs(dy);
+  if(absDx > absDy && absDx > 40){
+    if(dx >  0 && currentViewerIndex > 0)               { currentViewerIndex--; renderViewer(); }
+    if(dx <= 0 && currentViewerIndex < works.length - 1) { currentViewerIndex++; renderViewer(); }
+  } else if(dy > 60 && absDy > absDx){
+    closeViewer();
+  }
+}, {passive:true});
+
+viewer.addEventListener('click', e => {
+  if(e.target === viewer) closeViewer();
+});
+
+/* ── UI hide timer ── */
+function showUI(){
+  dots.classList.remove('hiddenUI'); addBtn.classList.remove('hiddenUI');
+  clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => {
+    dots.classList.add('hiddenUI'); addBtn.classList.add('hiddenUI');
+  }, 1200);
+}
+document.addEventListener('touchstart', showUI, {passive:true});
+document.addEventListener('mousemove', showUI);
+
+loadStorage(); render(); showUI();
+</script>
+</body>
+</html>
