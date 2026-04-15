@@ -21,9 +21,9 @@ body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFon
 }
 #mainPane.shifted { transform:translateX(-260px); }
 
-.gallery { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; scroll-behavior:smooth; -webkit-overflow-scrolling:touch; height:100%; scrollbar-width:none; }
-.gallery::-webkit-scrollbar { display:none; }
-.page { min-width:100%; display:grid; grid-template-columns:repeat(2,1fr); gap:14px; padding:28px 14px 14px; box-sizing:border-box; scroll-snap-align:start; align-content:start; }
+.gallery { display:flex; overflow:hidden; height:100%; position:relative; }
+.gallery-track { display:flex; height:100%; transition:transform .38s cubic-bezier(.3,1,.3,1); will-change:transform; }
+.page { min-width:100%; flex-shrink:0; display:grid; grid-template-columns:repeat(2,1fr); gap:14px; padding:28px 14px 14px; box-sizing:border-box; align-content:start; }
 
 /* Active filter pill at top */
 #filterBar {
@@ -214,7 +214,7 @@ body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFon
 
   <!-- Main pane (slides left to reveal tag panel) -->
   <div id="mainPane">
-    <div class="gallery" id="gallery"></div>
+    <div class="gallery" id="gallery"><div class="gallery-track" id="galleryTrack"></div></div>
     <div id="filterBar"><div class="filterPill" id="filterPill" onclick="clearFilter()"></div></div>
     <div class="dots" id="dots"></div>
     <div class="addBtn" id="addBtn" onclick="showTypePicker()">+</div>
@@ -377,11 +377,13 @@ function refreshTagPanel(){
 
 function setFilter(tag){
   activeFilterTag = (activeFilterTag===tag) ? null : tag;
+  currentPage = 0;
   renderFilterBar();
   render();
 }
 function clearFilter(){
   activeFilterTag=null;
+  currentPage = 0;
   renderFilterBar();
   render();
   refreshTagPanel();
@@ -397,25 +399,7 @@ function renderFilterBar(){
   }
 }
 
-/* ── Swipe on main pane to open tag panel ── */
-let paneSx=0, paneSy=0, paneSwiping=false;
-mainPane.addEventListener('touchstart',e=>{
-  // Only track if tag panel isn't already open and viewer is closed
-  if(tagPanel.classList.contains('open')) return;
-  if(viewer.classList.contains('active')) return;
-  paneSx=e.touches[0].clientX; paneSy=e.touches[0].clientY; paneSwiping=false;
-},{passive:true});
-mainPane.addEventListener('touchmove',e=>{
-  if(tagPanel.classList.contains('open')||viewer.classList.contains('active')) return;
-  const dx=e.touches[0].clientX-paneSx, dy=e.touches[0].clientY-paneSy;
-  if(!paneSwiping && Math.abs(dx)>12 && Math.abs(dx)>Math.abs(dy)*1.5) paneSwiping=true;
-},{passive:true});
-mainPane.addEventListener('touchend',e=>{
-  if(!paneSwiping) return;
-  const dx=e.changedTouches[0].clientX-paneSx;
-  if(dx > 60) openTagPanel(); // swipe right → open panel
-  paneSwiping=false;
-},{passive:true});
+/* pane swipe merged into gallery touch handler above */
 
 /* ── Type picker ── */
 function showTypePicker(){
@@ -512,7 +496,9 @@ function saveWork(){
       const item=pendingItems[0];
       works.push({type:item.type,src:item.src,thumb:item.thumb,title,desc,tags});
     }
-    saveStorage(); render(); refreshTagPanel();
+    saveStorage(); render();
+    goToPage(Math.floor((works.length-1)/8));
+    refreshTagPanel();
   }
   document.getElementById('inputModal').style.display='none';
   pendingItems=[]; pendingTags=[]; pendingType=null; editIndex=null;
@@ -520,7 +506,7 @@ function saveWork(){
 
 /* ── Render grid ── */
 function render(){
-  gallery.innerHTML=''; dots.innerHTML='';
+  document.getElementById('galleryTrack').innerHTML=''; dots.innerHTML='';
   const size=8;
   // When filter active, show only matching works but keep index mapping
   const visibleWorks = activeFilterTag
@@ -566,11 +552,22 @@ function render(){
       attachCardGestures(card, ri);
       page.appendChild(card);
     });
-    gallery.appendChild(page);
+    document.getElementById('galleryTrack').appendChild(page);
     const dot=document.createElement('div'); dot.className='dot';
     if(p===0) dot.classList.add('active');
     dots.appendChild(dot);
   }
+  // Clamp currentPage and reposition track without animation
+  const pageCount = Math.ceil(visibleWorks.length / size);
+  currentPage = pageCount > 0 ? Math.min(currentPage, pageCount - 1) : 0;
+  totalPages  = pageCount;
+  const track = document.getElementById('galleryTrack');
+  if(track){
+    track.style.transition = 'none';
+    track.style.transform  = `translateX(-${currentPage * 100}%)`;
+  }
+  // Sync dots
+  document.querySelectorAll('.dot').forEach((d,i) => d.classList.toggle('active', i === currentPage));
 }
 
 /* ── Card gestures ── */
@@ -597,11 +594,72 @@ function attachCardGestures(card, realIndex){
   card.addEventListener('dblclick',()=>{if(!didLong)openViewer(realIndex);});
 }
 
-gallery.addEventListener('scroll',()=>{
-  const idx=Math.round(gallery.scrollLeft/gallery.clientWidth);
-  document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active',i===idx));
+/* ── Manual gallery paging ── */
+let currentPage = 0;
+let totalPages  = 0;
+
+function goToPage(p, animate=true) {
+  const track = document.getElementById('galleryTrack');
+  if(!track) return;
+  totalPages  = track.children.length;
+  if(totalPages === 0) return;
+  p           = Math.max(0, Math.min(p, totalPages - 1));
+  currentPage = p;
+  track.style.transition = animate ? 'transform .38s cubic-bezier(.3,1,.3,1)' : 'none';
+  track.style.transform  = `translateX(-${p * 100}%)`;
+  document.querySelectorAll('.dot').forEach((d,i) => d.classList.toggle('active', i===p));
   showUI();
-});
+}
+
+/* Gallery touch — one page at a time, no fling */
+let gSx=0, gSy=0, gTracking=false, gIntent=null;
+
+gallery.addEventListener('touchstart', e => {
+  if(viewer.classList.contains('active')) return;
+  if(tagPanel.classList.contains('open')) return;
+  gSx = e.touches[0].clientX;
+  gSy = e.touches[0].clientY;
+  gTracking = true;
+  gIntent   = null;
+  // Freeze transition during drag
+  const track = document.getElementById('galleryTrack');
+  track.style.transition = 'none';
+}, {passive:true});
+
+gallery.addEventListener('touchmove', e => {
+  if(!gTracking) return;
+  const dx = e.touches[0].clientX - gSx;
+  const dy = e.touches[0].clientY - gSy;
+  if(gIntent === null) {
+    if(Math.abs(dx) > 6 || Math.abs(dy) > 6)
+      gIntent = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+  }
+  if(gIntent !== 'h') return;
+  // Live drag feedback
+  const track = document.getElementById('galleryTrack');
+  const base  = currentPage * 100;
+  const pct   = (dx / gallery.clientWidth) * 100;
+  track.style.transform = `translateX(calc(-${base}% + ${dx}px))`;
+}, {passive:true});
+
+gallery.addEventListener('touchend', e => {
+  if(!gTracking || gIntent !== 'h') { gTracking=false; gIntent=null; return; }
+  gTracking = false;
+  const dx = e.changedTouches[0].clientX - gSx;
+  const threshold = gallery.clientWidth * 0.25; // 25% of width to flip page
+
+  if(dx < -threshold) {
+    goToPage(currentPage + 1);       // swipe left  → next page
+  } else if(dx > threshold && gallery.scrollLeft < 10) {
+    openTagPanel();                  // swipe right on page 1 → tag panel
+    goToPage(currentPage, true);
+  } else if(dx > threshold) {
+    goToPage(currentPage - 1);       // swipe right → prev page
+  } else {
+    goToPage(currentPage);           // snap back
+  }
+  gIntent = null;
+}, {passive:true});
 
 /* ── CRUD ── */
 function moveUp(){ if(selectedIndex>0){[works[selectedIndex],works[selectedIndex-1]]=[works[selectedIndex-1],works[selectedIndex]];saveStorage();render();}closeSheet(); }
