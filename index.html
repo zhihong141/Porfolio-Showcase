@@ -413,7 +413,7 @@ mainPane.addEventListener('touchmove',e=>{
 mainPane.addEventListener('touchend',e=>{
   if(!paneSwiping) return;
   const dx=e.changedTouches[0].clientX-paneSx;
-  if(dx < -60) openTagPanel(); // swipe left → open panel
+  if(dx > 60) openTagPanel(); // swipe right → open panel
   paneSwiping=false;
 },{passive:true});
 
