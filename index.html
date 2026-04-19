@@ -38,10 +38,7 @@ body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFon
 .card .tag-chips { position:absolute; bottom:7px; left:7px; display:flex; gap:3px; overflow:hidden; max-width:70%; pointer-events:none; }
 .card .tag-chip  { background:rgba(0,0,0,0.55); backdrop-filter:blur(4px); color:rgba(255,255,255,0.8); font-size:9px; padding:2px 6px; border-radius:8px; white-space:nowrap; }
 
-.card .col-strips { position:absolute; inset:0; display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; pointer-events:none; }
-.card .col-strips div { overflow:hidden; }
-.card .col-strips div img { width:100%; height:100%; object-fit:cover; display:block; }
-.card .col-dim { position:absolute; inset:0; background:rgba(0,0,0,0.18); pointer-events:none; }
+
 
 .dots { position:absolute; bottom:80px; left:0; right:0; display:flex; justify-content:center; gap:6px; transition:opacity .4s; pointer-events:none; }
 .dot  { width:6px; height:6px; border-radius:50%; background:#666; flex-shrink:0; }
@@ -131,7 +128,7 @@ body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFon
   <div id="tagPanel">
     <div class="tag-panel-header">
       <h2>TAGS</h2>
-      <button class="tag-panel-close" onclick="closeTagPanel()">×</button>
+      <button class="tag-panel-close" onclick="closeTagPanel()">�</button>
     </div>
     <div class="tag-list" id="tagList"></div>
     <div class="tag-panel-footer">
@@ -140,7 +137,7 @@ body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFon
   </div>
 
   <div class="viewer" id="viewer">
-    <div class="viewer-hint" id="viewerHint">tap outside to close · swipe to navigate</div>
+    <div class="viewer-hint" id="viewerHint">tap outside to close � swipe to navigate</div>
     <div class="viewer-media-wrap" id="viewerMediaWrap"></div>
     <div class="viewer-inner-dots" id="viewerInnerDots"></div>
     <div class="vtitle" id="viewerTitle"></div>
@@ -206,11 +203,11 @@ const innerDots = document.getElementById('viewerInnerDots');
 const mainPane  = document.getElementById('mainPane');
 const tagPanel  = document.getElementById('tagPanel');
 
-/* ── Storage ── */
+/* ?? Storage ?? */
 function saveStorage(){ try{ localStorage.setItem('works',JSON.stringify(works)); }catch(e){ alert('Storage full.'); } }
 function loadStorage(){ const d=localStorage.getItem('works'); if(d) works=JSON.parse(d); }
 
-/* ── Media processing ── */
+/* ?? Media processing ?? */
 function compressImage(file, cb){
   const img=new Image(), r=new FileReader();
   r.onload=e=>img.src=e.target.result;
@@ -242,7 +239,7 @@ function processFile(file, cb){
   else compressImage(file,src=>cb({type:'image',src}));
 }
 
-/* ── Paging ── */
+/* ?? Paging ?? */
 function PW(){ return gallery.clientWidth || 375; }
 
 function goToPage(p, animate=true){
@@ -256,7 +253,7 @@ function goToPage(p, animate=true){
   showUI();
 }
 
-/* ── Gallery touch — one page per swipe ── */
+/* ?? Gallery touch � one page per swipe ?? */
 let gSx, gSy, gTracking=false, gIntent=null;
 
 gallery.addEventListener('touchstart', e=>{
@@ -287,7 +284,7 @@ gallery.addEventListener('touchend', e=>{
   gIntent=null;
 },{passive:true});
 
-/* ── Tag panel ── */
+/* ?? Tag panel ?? */
 function openTagPanel(){ mainPane.classList.add('shifted'); tagPanel.classList.add('open'); refreshTagPanel(); }
 function closeTagPanel(){ mainPane.classList.remove('shifted'); tagPanel.classList.remove('open'); }
 
@@ -312,11 +309,11 @@ function setFilter(tag){ activeFilterTag=(activeFilterTag===tag)?null:tag; curre
 function clearFilter(){ activeFilterTag=null; currentPage=0; renderFilterBar(); render(); refreshTagPanel(); }
 function renderFilterBar(){
   const bar=document.getElementById('filterBar'), pill=document.getElementById('filterPill');
-  if(activeFilterTag){ pill.textContent=activeFilterTag+' ×'; bar.classList.add('visible'); }
+  if(activeFilterTag){ pill.textContent=activeFilterTag+' �'; bar.classList.add('visible'); }
   else bar.classList.remove('visible');
 }
 
-/* ── Type picker / modals ── */
+/* ?? Type picker / modals ?? */
 function showTypePicker(){
   if(editIndex!==null){ openEditModal(); return; }
   document.getElementById('typePicker').style.display='flex';
@@ -367,7 +364,7 @@ function refreshTagChips(){
   const wrap=document.getElementById('currentTags'); wrap.innerHTML='';
   pendingTags.forEach((tag,i)=>{
     const c=document.createElement('div'); c.className='current-tag';
-    c.innerHTML=`${tag}<span class="rm" onclick="removeTag(${i})">×</span>`;
+    c.innerHTML=`${tag}<span class="rm" onclick="removeTag(${i})">�</span>`;
     wrap.appendChild(c);
   });
 }
@@ -378,7 +375,7 @@ function refreshThumbList(){
   pendingItems.forEach((item,i)=>{
     const wrap=document.createElement('div'); wrap.className='col-thumb-item';
     const img=document.createElement('img'); img.src=item.type==='video'?item.thumb:item.src;
-    const rm=document.createElement('div'); rm.className='rm'; rm.innerText='×';
+    const rm=document.createElement('div'); rm.className='rm'; rm.innerText='�';
     rm.onclick=()=>{ pendingItems.splice(i,1); refreshThumbList(); };
     wrap.appendChild(img); wrap.appendChild(rm); list.appendChild(wrap);
   });
@@ -408,7 +405,7 @@ function saveWork(){
   pendingItems=[]; pendingTags=[]; pendingType=null; editIndex=null;
 }
 
-/* ── Render ── */
+/* ?? Render ?? */
 function render(){
   track.innerHTML=''; dots.innerHTML='';
   const size=8;
@@ -422,20 +419,18 @@ function render(){
   for(let p=0;p<nPages;p++){
     const page=document.createElement('div');
     page.className='page';
-    page.style.width=pw+'px';         // ← explicit pixel width, always correct
+    page.style.width=pw+'px';         // ? explicit pixel width, always correct
 
     vis.slice(p*size,(p+1)*size).forEach(({w:item,i:ri})=>{
       const card=document.createElement('div'); card.className='card';
 
       if(item.type==='collection'){
-        const strips=document.createElement('div'); strips.className='col-strips';
-        item.items.slice(0,4).forEach(m=>{
-          const cell=document.createElement('div'), img=document.createElement('img');
-          img.src=m.type==='video'?m.thumb:m.src;
-          cell.appendChild(img); strips.appendChild(cell);
-        });
-        card.appendChild(strips);
-        const dim=document.createElement('div'); dim.className='col-dim'; card.appendChild(dim);
+        // Use first item as the cover thumbnail
+        const first=item.items[0];
+        const img=document.createElement('img');
+        img.src=first.type==='video'?first.thumb:first.src;
+        card.appendChild(img);
+        // Collection badge (stacked squares + count)
         const badge=document.createElement('div'); badge.className='badge';
         badge.innerHTML=`<svg viewBox="0 0 10 10"><rect x="0" y="0" width="7" height="7" rx="1" fill="none" stroke="white" stroke-width="1.2"/><rect x="2" y="2" width="7" height="7" rx="1" fill="none" stroke="white" stroke-width="1.2"/></svg><span>${item.items.length}</span>`;
         card.appendChild(badge);
@@ -478,7 +473,7 @@ function render(){
   document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active',i===currentPage));
 }
 
-/* ── Card gestures: double-tap → viewer, long-press → action sheet ── */
+/* ?? Card gestures: double-tap ? viewer, long-press ? action sheet ?? */
 function attachCardGestures(card, ri){
   let t0x,t0y,longTimer,didLong=false,lastTap=0,lastX=0,lastY=0;
 
@@ -507,14 +502,14 @@ function attachCardGestures(card, ri){
   card.addEventListener('dblclick',()=>{ if(!didLong) openViewer(ri); });
 }
 
-/* ── CRUD ── */
+/* ?? CRUD ?? */
 function moveUp(){ if(selectedIndex>0){[works[selectedIndex],works[selectedIndex-1]]=[works[selectedIndex-1],works[selectedIndex]];saveStorage();render();}closeSheet(); }
 function moveDown(){ if(selectedIndex<works.length-1){[works[selectedIndex],works[selectedIndex+1]]=[works[selectedIndex+1],works[selectedIndex]];saveStorage();render();}closeSheet(); }
 function editItem(){ editIndex=selectedIndex; closeSheet(); openEditModal(); }
 function deleteItem(){ works.splice(selectedIndex,1); saveStorage(); render(); closeViewer(); closeSheet(); }
 function closeSheet(){ document.getElementById('actionSheet').classList.remove('show'); }
 
-/* ── Viewer ── */
+/* ?? Viewer ?? */
 function openViewer(index){ currentViewerIndex=index; currentInnerIndex=0; renderViewer(); viewer.classList.add('active'); showUI(); }
 function closeViewer(){ const v=mediaWrap.querySelector('video'); if(v) v.pause(); viewer.classList.remove('active'); }
 
@@ -536,7 +531,7 @@ function renderViewer(){
   (work.tags||[]).forEach(t=>{ const c=document.createElement('div'); c.className='viewer-tag'; c.textContent=t; vtags.appendChild(c); });
   innerDots.innerHTML='';
   if(isCol&&items.length>1) items.forEach((_,i)=>{ const d=document.createElement('div'); d.className='idot'; if(i===currentInnerIndex) d.classList.add('active'); innerDots.appendChild(d); });
-  document.getElementById('viewerHint').innerText=isCol&&items.length>1?'swipe image to browse · tap outside to close':'tap outside to close · swipe to navigate';
+  document.getElementById('viewerHint').innerText=isCol&&items.length>1?'swipe image to browse � tap outside to close':'tap outside to close � swipe to navigate';
 }
 
 let vt0x,vt0y,vMoved;
@@ -564,7 +559,7 @@ viewer.addEventListener('touchend',e=>{
 },{passive:true});
 viewer.addEventListener('click',e=>{ if(e.target===viewer) closeViewer(); });
 
-/* ── UI hide timer ── */
+/* ?? UI hide timer ?? */
 function showUI(){
   dots.classList.remove('hiddenUI'); addBtn.classList.remove('hiddenUI');
   clearTimeout(hideTimer);
