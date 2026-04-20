@@ -2,11 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Exhibition App</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="SEVEN.FOUR."/>
+<meta name="theme-color" content="#0b0b0b"/>
+<title>SEVEN.FOUR.</title>
 <style>
 * { box-sizing:border-box; }
-body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFont,sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; }
+body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFont,sans-serif; display:flex; justify-content:center; align-items:center; min-height:100vh; min-height:-webkit-fill-available; }
 .app { width:375px; height:812px; background:#111; border-radius:30px; overflow:hidden; position:relative; }
 
 .splash { position:absolute; inset:0; background:#0b0b0b; display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:100; animation:fadeOut 1s ease 2.2s forwards; }
@@ -35,7 +39,7 @@ body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFon
 .card .badge svg  { width:9px; height:9px; fill:white; flex-shrink:0; }
 .card .badge span { color:white; font-size:10px; font-weight:600; line-height:1; }
 
-.card .tag-chips { position:absolute; bottom:7px; left:7px; display:flex; gap:3px; overflow:hidden; max-width:70%; pointer-events:none; }
+.card .tag-chips { position:absolute; bottom:7px; left:7px; display:flex; gap:3px; overflow:hidden; max-width:55%; pointer-events:none; }
 .card .tag-chip  { background:rgba(0,0,0,0.55); backdrop-filter:blur(4px); color:rgba(255,255,255,0.8); font-size:9px; padding:2px 6px; border-radius:8px; white-space:nowrap; }
 
 
@@ -128,7 +132,7 @@ body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFon
   <div id="tagPanel">
     <div class="tag-panel-header">
       <h2>TAGS</h2>
-      <button class="tag-panel-close" onclick="closeTagPanel()">�</button>
+      <button class="tag-panel-close" onclick="closeTagPanel()"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="1" y1="1" x2="11" y2="11" stroke="#aaa" stroke-width="1.8" stroke-linecap="round"/><line x1="11" y1="1" x2="1" y2="11" stroke="#aaa" stroke-width="1.8" stroke-linecap="round"/></svg></button>
     </div>
     <div class="tag-list" id="tagList"></div>
     <div class="tag-panel-footer">
@@ -137,7 +141,7 @@ body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFon
   </div>
 
   <div class="viewer" id="viewer">
-    <div class="viewer-hint" id="viewerHint">tap outside to close � swipe to navigate</div>
+    <div class="viewer-hint" id="viewerHint">tap outside to close · swipe to navigate</div>
     <div class="viewer-media-wrap" id="viewerMediaWrap"></div>
     <div class="viewer-inner-dots" id="viewerInnerDots"></div>
     <div class="vtitle" id="viewerTitle"></div>
@@ -145,7 +149,7 @@ body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFon
     <div class="vdesc" id="viewerDesc"></div>
   </div>
 
-  <div class="inputModal" id="inputModal">
+  <div class="inputModal" id="inputModal" onclick="closeModalBackdrop(event)">
     <div class="inputBox">
       <input id="titleInput" placeholder="Title..."/>
       <textarea id="descInput" placeholder="Description..."></textarea>
@@ -165,13 +169,14 @@ body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFon
     </div>
   </div>
 
-  <div class="inputModal" id="typePicker">
+  <div class="inputModal" id="typePicker" onclick="closeTypePicker(event)">
     <div class="inputBox" style="text-align:center">
       <p style="color:#aaa;font-size:13px;margin:0 0 14px">What do you want to add?</p>
       <div class="irow">
         <button class="btn-secondary" onclick="pickType('single')">Single media</button>
         <button class="btn-secondary" onclick="pickType('collection')">Collection</button>
       </div>
+      <button onclick="closeTypePicker()" style="width:100%;padding:10px;border:none;border-radius:10px;background:transparent;color:#555;font-size:13px;cursor:pointer;margin-top:4px">Cancel</button>
     </div>
   </div>
 
@@ -203,11 +208,11 @@ const innerDots = document.getElementById('viewerInnerDots');
 const mainPane  = document.getElementById('mainPane');
 const tagPanel  = document.getElementById('tagPanel');
 
-/* ?? Storage ?? */
+/* ── Storage ── */
 function saveStorage(){ try{ localStorage.setItem('works',JSON.stringify(works)); }catch(e){ alert('Storage full.'); } }
 function loadStorage(){ const d=localStorage.getItem('works'); if(d) works=JSON.parse(d); }
 
-/* ?? Media processing ?? */
+/* ── Media processing ── */
 function compressImage(file, cb){
   const img=new Image(), r=new FileReader();
   r.onload=e=>img.src=e.target.result;
@@ -239,7 +244,7 @@ function processFile(file, cb){
   else compressImage(file,src=>cb({type:'image',src}));
 }
 
-/* ?? Paging ?? */
+/* ── Paging ── */
 function PW(){ return gallery.clientWidth || 375; }
 
 function goToPage(p, animate=true){
@@ -253,7 +258,7 @@ function goToPage(p, animate=true){
   showUI();
 }
 
-/* ?? Gallery touch � one page per swipe ?? */
+/* ── Gallery touch — one page per swipe ── */
 let gSx, gSy, gTracking=false, gIntent=null;
 
 gallery.addEventListener('touchstart', e=>{
@@ -284,7 +289,7 @@ gallery.addEventListener('touchend', e=>{
   gIntent=null;
 },{passive:true});
 
-/* ?? Tag panel ?? */
+/* ── Tag panel ── */
 function openTagPanel(){ mainPane.classList.add('shifted'); tagPanel.classList.add('open'); refreshTagPanel(); }
 function closeTagPanel(){ mainPane.classList.remove('shifted'); tagPanel.classList.remove('open'); }
 
@@ -309,14 +314,25 @@ function setFilter(tag){ activeFilterTag=(activeFilterTag===tag)?null:tag; curre
 function clearFilter(){ activeFilterTag=null; currentPage=0; renderFilterBar(); render(); refreshTagPanel(); }
 function renderFilterBar(){
   const bar=document.getElementById('filterBar'), pill=document.getElementById('filterPill');
-  if(activeFilterTag){ pill.textContent=activeFilterTag+' �'; bar.classList.add('visible'); }
+  if(activeFilterTag){ pill.textContent=activeFilterTag+' ×'; bar.classList.add('visible'); }
   else bar.classList.remove('visible');
 }
 
-/* ?? Type picker / modals ?? */
+/* ── Type picker / modals ── */
 function showTypePicker(){
   if(editIndex!==null){ openEditModal(); return; }
   document.getElementById('typePicker').style.display='flex';
+}
+function closeTypePicker(e){
+  if(e && e.target !== document.getElementById('typePicker') && !e.target.matches('button[onclick="closeTypePicker()"]')) return;
+  document.getElementById('typePicker').style.display='none';
+  editIndex=null;
+}
+function closeModalBackdrop(e){
+  if(e.target === document.getElementById('inputModal')){
+    document.getElementById('inputModal').style.display='none';
+    pendingItems=[]; pendingTags=[]; pendingType=null; editIndex=null;
+  }
 }
 function pickType(t){
   document.getElementById('typePicker').style.display='none';
@@ -364,7 +380,7 @@ function refreshTagChips(){
   const wrap=document.getElementById('currentTags'); wrap.innerHTML='';
   pendingTags.forEach((tag,i)=>{
     const c=document.createElement('div'); c.className='current-tag';
-    c.innerHTML=`${tag}<span class="rm" onclick="removeTag(${i})">�</span>`;
+    c.innerHTML=`${tag}<span class="rm" onclick="removeTag(${i})">×</span>`;
     wrap.appendChild(c);
   });
 }
@@ -375,7 +391,7 @@ function refreshThumbList(){
   pendingItems.forEach((item,i)=>{
     const wrap=document.createElement('div'); wrap.className='col-thumb-item';
     const img=document.createElement('img'); img.src=item.type==='video'?item.thumb:item.src;
-    const rm=document.createElement('div'); rm.className='rm'; rm.innerText='�';
+    const rm=document.createElement('div'); rm.className='rm'; rm.innerText='×';
     rm.onclick=()=>{ pendingItems.splice(i,1); refreshThumbList(); };
     wrap.appendChild(img); wrap.appendChild(rm); list.appendChild(wrap);
   });
@@ -405,7 +421,8 @@ function saveWork(){
   pendingItems=[]; pendingTags=[]; pendingType=null; editIndex=null;
 }
 
-/* ?? Render ?? */
+
+/* ── Render ── */
 function render(){
   track.innerHTML=''; dots.innerHTML='';
   const size=8;
@@ -415,11 +432,18 @@ function render(){
 
   const pw=PW();
   const nPages=Math.ceil(vis.length/size)||0;
+  // Show empty state if no works
+  if(vis.length===0){
+    const empty=document.createElement('div');
+    empty.style.cssText='position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:10px;pointer-events:none;';
+    empty.innerHTML='<div style="width:40px;height:40px;border-radius:50%;border:1px solid #333;display:flex;align-items:center;justify-content:center;"><span style="color:#444;font-size:20px;line-height:1">+</span></div><span style="color:#444;font-size:12px;letter-spacing:1px">'+(activeFilterTag?'NO WORKS WITH THIS TAG':'TAP + TO ADD YOUR FIRST WORK')+'</span>';
+    track.appendChild(empty);
+  }
 
   for(let p=0;p<nPages;p++){
     const page=document.createElement('div');
     page.className='page';
-    page.style.width=pw+'px';         // ? explicit pixel width, always correct
+    page.style.width=pw+'px';         // ← explicit pixel width, always correct
 
     vis.slice(p*size,(p+1)*size).forEach(({w:item,i:ri})=>{
       const card=document.createElement('div'); card.className='card';
@@ -473,7 +497,7 @@ function render(){
   document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active',i===currentPage));
 }
 
-/* ?? Card gestures: double-tap ? viewer, long-press ? action sheet ?? */
+/* ── Card gestures: double-tap → viewer, long-press → action sheet ── */
 function attachCardGestures(card, ri){
   let t0x,t0y,longTimer,didLong=false,lastTap=0,lastX=0,lastY=0;
 
@@ -502,14 +526,14 @@ function attachCardGestures(card, ri){
   card.addEventListener('dblclick',()=>{ if(!didLong) openViewer(ri); });
 }
 
-/* ?? CRUD ?? */
+/* ── CRUD ── */
 function moveUp(){ if(selectedIndex>0){[works[selectedIndex],works[selectedIndex-1]]=[works[selectedIndex-1],works[selectedIndex]];saveStorage();render();}closeSheet(); }
 function moveDown(){ if(selectedIndex<works.length-1){[works[selectedIndex],works[selectedIndex+1]]=[works[selectedIndex+1],works[selectedIndex]];saveStorage();render();}closeSheet(); }
 function editItem(){ editIndex=selectedIndex; closeSheet(); openEditModal(); }
 function deleteItem(){ works.splice(selectedIndex,1); saveStorage(); render(); closeViewer(); closeSheet(); }
 function closeSheet(){ document.getElementById('actionSheet').classList.remove('show'); }
 
-/* ?? Viewer ?? */
+/* ── Viewer ── */
 function openViewer(index){ currentViewerIndex=index; currentInnerIndex=0; renderViewer(); viewer.classList.add('active'); showUI(); }
 function closeViewer(){ const v=mediaWrap.querySelector('video'); if(v) v.pause(); viewer.classList.remove('active'); }
 
@@ -531,7 +555,7 @@ function renderViewer(){
   (work.tags||[]).forEach(t=>{ const c=document.createElement('div'); c.className='viewer-tag'; c.textContent=t; vtags.appendChild(c); });
   innerDots.innerHTML='';
   if(isCol&&items.length>1) items.forEach((_,i)=>{ const d=document.createElement('div'); d.className='idot'; if(i===currentInnerIndex) d.classList.add('active'); innerDots.appendChild(d); });
-  document.getElementById('viewerHint').innerText=isCol&&items.length>1?'swipe image to browse � tap outside to close':'tap outside to close � swipe to navigate';
+  document.getElementById('viewerHint').innerText=isCol&&items.length>1?'swipe image to browse · tap outside to close':'tap outside to close · swipe to navigate';
 }
 
 let vt0x,vt0y,vMoved;
@@ -559,7 +583,7 @@ viewer.addEventListener('touchend',e=>{
 },{passive:true});
 viewer.addEventListener('click',e=>{ if(e.target===viewer) closeViewer(); });
 
-/* ?? UI hide timer ?? */
+/* ── UI hide timer ── */
 function showUI(){
   dots.classList.remove('hiddenUI'); addBtn.classList.remove('hiddenUI');
   clearTimeout(hideTimer);
