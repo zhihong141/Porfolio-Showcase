@@ -186,16 +186,24 @@ body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFon
 
   <!-- Settings sheet -->
   <div class="actionSheet" id="settingsSheet">
-    <div style="padding:16px 20px 8px;border-bottom:1px solid #222">
-      <div style="color:#888;font-size:10px;letter-spacing:2px">STORAGE</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px">
+    <div style="padding:16px 20px 12px;border-bottom:1px solid #222">
+      <div style="color:#888;font-size:10px;letter-spacing:2px;margin-bottom:10px">STORAGE</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
         <span style="color:#aaa;font-size:13px">Items stored</span>
         <span style="color:#fff;font-size:13px" id="settingsCount">—</span>
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
         <span style="color:#aaa;font-size:13px">Estimated size</span>
         <span style="color:#fff;font-size:13px" id="settingsSize">—</span>
       </div>
+    </div>
+    <div style="padding:12px 20px;border-bottom:1px solid #222">
+      <div style="color:#888;font-size:10px;letter-spacing:2px;margin-bottom:10px">BACKUP</div>
+      <div style="display:flex;gap:8px">
+        <button onclick="exportBackup()" style="flex:1;padding:11px;border:none;border-radius:10px;background:#1e2a3a;color:#4a90d9;font-size:13px;font-weight:600;cursor:pointer">↑ Export</button>
+        <button onclick="triggerImport()" style="flex:1;padding:11px;border:none;border-radius:10px;background:#1a1a1a;color:#aaa;font-size:13px;font-weight:600;cursor:pointer">↓ Import</button>
+      </div>
+      <div style="color:#555;font-size:10px;text-align:center;margin-top:8px;line-height:1.5">Export saves a backup file to your device.<br>Import restores from a previous export.</div>
     </div>
     <button onclick="masterCompress()">
       <span id="masterCompressLabel">Compress All Media</span>
@@ -203,6 +211,7 @@ body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFon
     <button onclick="clearAllWorks()" style="color:#e05555!important">Clear All Works</button>
     <button onclick="closeSettings()" style="color:#888!important">Close</button>
   </div>
+  <input type="file" id="importFileInput" accept=".json" style="display:none" onchange="importBackup(event)"/>
 
   <!-- Progress overlay -->
   <div id="progressOverlay" style="position:absolute;inset:0;background:rgba(0,0,0,0.85);z-index:200;display:none;flex-direction:column;justify-content:center;align-items:center;gap:16px">
@@ -242,8 +251,73 @@ const mainPane  = document.getElementById('mainPane');
 const tagPanel  = document.getElementById('tagPanel');
 
 /* ── Storage ── */
-function saveStorage(){ try{ localStorage.setItem('works',JSON.stringify(works)); }catch(e){ alert('Storage full.'); } }
-function loadStorage(){ const d=localStorage.getItem('works'); if(d) works=JSON.parse(d); }
+/* ── IndexedDB storage ──
+   Replaces localStorage. IndexedDB can hold hundreds of MB on device
+   (browser asks user permission to expand beyond ~50MB on most browsers).
+   Each work is stored as its own record by index so reads/writes are fast
+   even with large base64 blobs.
+   API is async, so saveStorage/loadStorage return Promises.
+   All callers use saveStorage().then(()=>...) or await.
+*/
+let db = null;
+
+function openDB(){
+  return new Promise((res,rej)=>{
+    if(db){ res(db); return; }
+    const req = indexedDB.open('sevenfour', 2);
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      // Main store: one record = one work item, keyed by auto-increment id
+      if(!d.objectStoreNames.contains('works')){
+        d.createObjectStore('works', {keyPath:'_id', autoIncrement:true});
+      }
+      // Migrate from localStorage if first upgrade
+      if(e.oldVersion === 0){
+        try{
+          const old = localStorage.getItem('works');
+          if(old){
+            const arr = JSON.parse(old);
+            const store = e.target.transaction.objectStore('works');
+            arr.forEach(w => store.add(w));
+            localStorage.removeItem('works'); // free up the old space
+          }
+        }catch(err){ /* ignore migration errors */ }
+      }
+    };
+    req.onsuccess = e => { db=e.target.result; res(db); };
+    req.onerror   = e => { console.error('IDB open error',e); rej(e); };
+  });
+}
+
+function saveStorage(){
+  return openDB().then(d => new Promise((res,rej)=>{
+    const tx    = d.transaction('works','readwrite');
+    const store = tx.objectStore('works');
+    // Clear and rewrite all — simple and consistent
+    store.clear().onsuccess = () => {
+      works.forEach(w => store.put(w));
+    };
+    tx.oncomplete = res;
+    tx.onerror    = rej;
+  })).catch(e=>{ alert('Save failed: '+e); });
+}
+
+function loadStorage(){
+  return openDB().then(d => new Promise((res,rej)=>{
+    const store = d.transaction('works','readonly').objectStore('works');
+    const req   = store.getAll();
+    req.onsuccess = () => { works = req.result || []; res(); };
+    req.onerror   = rej;
+  })).catch(()=>{ works=[]; });
+}
+
+/* Estimate size of current works in memory */
+function estimateSize(){
+  try{
+    const s = JSON.stringify(works);
+    return new Blob([s]).size;
+  }catch(e){ return 0; }
+}
 
 /* ── Media processing ── */
 /* ── Show a processing toast ── */
@@ -552,7 +626,7 @@ function saveWork(){
   if(editIndex!==null){
     Object.assign(works[editIndex],{title,desc,tags});
     if(works[editIndex].type==='collection') works[editIndex].items=pendingItems;
-    saveStorage(); render(); refreshTagPanel();
+    saveStorage().then(()=>{ render(); refreshTagPanel(); });
   } else {
     if(pendingType==='collection'){
       if(!pendingItems.length){ alert('Add at least one item.'); return; }
@@ -561,9 +635,7 @@ function saveWork(){
       const it=pendingItems[0];
       works.push({type:it.type,src:it.src,thumb:it.thumb,title,desc,tags});
     }
-    saveStorage(); render();
-    goToPage(Math.floor((works.length-1)/8), true);
-    refreshTagPanel();
+    saveStorage().then(()=>{ render(); goToPage(Math.floor((works.length-1)/8),true); refreshTagPanel(); });
   }
   document.getElementById('inputModal').style.display='none';
   pendingItems=[]; pendingTags=[]; pendingType=null; editIndex=null;
@@ -693,8 +765,7 @@ function attachCardGestures(card, ri){
 
 function openSettings(){
   // Update counts
-  const raw = localStorage.getItem('works') || '[]';
-  const bytes = new Blob([raw]).size;
+  const bytes = estimateSize();
   const kb = (bytes/1024).toFixed(0);
   const mb = (bytes/1024/1024).toFixed(2);
   document.getElementById('settingsCount').textContent = works.length + (works.length===1?' item':' items');
@@ -707,7 +778,75 @@ function closeSettings(){
 }
 function clearAllWorks(){
   if(!confirm('Delete all works? This cannot be undone.')) return;
-  works=[]; saveStorage(); render(); closeSettings();
+  works=[]; saveStorage().then(()=>{ render(); closeSettings(); });
+}
+
+/* ── Export backup ──
+   Serialises the entire works array (including all base64 image/video data)
+   into a JSON file and triggers a download. The file can be saved to
+   iCloud Drive, Google Drive, emailed, etc. — anything the OS offers.
+*/
+function exportBackup(){
+  if(!works.length){ alert('Nothing to export yet.'); return; }
+  closeSettings();
+  showToast('PREPARING EXPORT…');
+  setTimeout(()=>{
+    const payload = JSON.stringify({ version:1, exported: new Date().toISOString(), works });
+    const blob    = new Blob([payload], {type:'application/json'});
+    const url     = URL.createObjectURL(blob);
+    const a       = document.createElement('a');
+    const date    = new Date().toISOString().slice(0,10);
+    a.href        = url;
+    a.download    = `sevenfour-backup-${date}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    hideToast();
+    showToast('EXPORTED ✓');
+    setTimeout(hideToast, 2500);
+  }, 100);
+}
+
+/* ── Import backup ──
+   Reads a previously exported JSON file, validates it, merges or replaces works.
+*/
+function triggerImport(){
+  document.getElementById('importFileInput').click();
+}
+
+function importBackup(e){
+  const file = e.target.files[0]; if(!file) return;
+  closeSettings();
+  showToast('IMPORTING…');
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if(!data.works || !Array.isArray(data.works)) throw new Error('Invalid file');
+      // Ask: merge or replace?
+      const choice = works.length
+        ? confirm(`You have ${works.length} existing work(s).\n\nOK = Replace all with backup\nCancel = Merge backup into existing`)
+        : true;
+      if(choice){
+        works = data.works;
+      } else {
+        // Merge: append items from backup that don't duplicate by title+type
+        const existing = new Set(works.map(w=>w.title+'|'+w.type));
+        data.works.forEach(w=>{ if(!existing.has(w.title+'|'+w.type)) works.push(w); });
+      }
+      saveStorage().then(render);
+      hideToast();
+      showToast(`IMPORTED ${data.works.length} WORKS ✓`);
+      setTimeout(hideToast, 2500);
+    } catch(err){
+      hideToast();
+      alert('Could not read backup file. Make sure it was exported from this app.');
+    }
+    // Reset input so same file can be re-selected
+    e.target.value='';
+  };
+  r.readAsText(file);
 }
 
 /* ── Master compress ── */
@@ -721,7 +860,7 @@ async function masterCompress(){
   const sub      = document.getElementById('progressSub');
   overlay.style.display='flex';
 
-  const before = new Blob([localStorage.getItem('works')||'']).size;
+  const before = estimateSize();
   let done = 0;
 
   // Flatten all compressible items
@@ -770,10 +909,10 @@ async function masterCompress(){
     await tick(); // let UI breathe
   }
 
-  saveStorage();
+  await saveStorage();
   render();
 
-  const after = new Blob([localStorage.getItem('works')||'']).size;
+  const after = estimateSize();
   const savedKB = ((before-after)/1024).toFixed(0);
   const savedPct = before>0 ? Math.round((1-after/before)*100) : 0;
 
@@ -803,10 +942,10 @@ function recompressImageSrc(src, cb){
 function tick(){ return new Promise(r=>setTimeout(r,0)); }
 
 /* ── CRUD ── */
-function moveUp(){ if(selectedIndex>0){[works[selectedIndex],works[selectedIndex-1]]=[works[selectedIndex-1],works[selectedIndex]];saveStorage();render();}closeSheet(); }
-function moveDown(){ if(selectedIndex<works.length-1){[works[selectedIndex],works[selectedIndex+1]]=[works[selectedIndex+1],works[selectedIndex]];saveStorage();render();}closeSheet(); }
+function moveUp(){ if(selectedIndex>0){[works[selectedIndex],works[selectedIndex-1]]=[works[selectedIndex-1],works[selectedIndex]];saveStorage().then(render);}closeSheet(); }
+function moveDown(){ if(selectedIndex<works.length-1){[works[selectedIndex],works[selectedIndex+1]]=[works[selectedIndex+1],works[selectedIndex]];saveStorage().then(render);}closeSheet(); }
 function editItem(){ editIndex=selectedIndex; closeSheet(); openEditModal(); }
-function deleteItem(){ works.splice(selectedIndex,1); saveStorage(); render(); closeViewer(); closeSheet(); }
+function deleteItem(){ works.splice(selectedIndex,1); saveStorage().then(()=>{ render(); closeViewer(); closeSheet(); }); }
 function closeSheet(){ document.getElementById('actionSheet').classList.remove('show'); }
 
 /* ── Viewer ── */
@@ -868,7 +1007,7 @@ function showUI(){
 document.addEventListener('touchstart',showUI,{passive:true});
 document.addEventListener('mousemove',showUI);
 
-loadStorage(); render(); showUI();
+loadStorage().then(()=>{ render(); showUI(); });
 </script>
 </body>
 </html>
