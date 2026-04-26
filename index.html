@@ -116,6 +116,10 @@ body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFon
 
 .addBtn { position:absolute; bottom:50px; left:50%; transform:translateX(-50%); width:21px; height:21px; border-radius:50%; background:white; display:flex; justify-content:center; align-items:center; font-size:12px; transition:opacity .4s; box-shadow:0 0 18px rgba(255,255,255,0.35),0 0 30px rgba(255,255,255,0.15); backdrop-filter:blur(6px); z-index:5; cursor:pointer; -webkit-user-select:none; user-select:none; }
 .hiddenUI { opacity:0; pointer-events:none; }
+#settingsSheet { position:absolute; bottom:0; width:100%; background:#111; transform:translateY(100%); transition:.4s cubic-bezier(.2,1.3,.3,1); z-index:70; border-radius:20px 20px 0 0; overflow:hidden; }
+#settingsSheet.show { transform:translateY(0); }
+#settingsSheet button { padding:16px; background:#1a1a1a; color:white; border:none; border-bottom:1px solid #222; width:100%; font-size:15px; cursor:pointer; display:block; text-align:center; }
+#settingsSheet button:last-child { border-bottom:none; }
 </style>
 </head>
 <body>
@@ -126,7 +130,7 @@ body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFon
     <div id="gallery"><div id="galleryTrack"></div></div>
     <div id="filterBar"><div class="filterPill" id="filterPill" onclick="clearFilter()"></div></div>
     <div class="dots" id="dots"></div>
-    <div class="addBtn" id="addBtn" onclick="showTypePicker()">+</div>
+    <div class="addBtn" id="addBtn">+</div>
   </div>
 
   <div id="tagPanel">
@@ -180,6 +184,35 @@ body { margin:0; background:#0b0b0b; font-family:-apple-system,BlinkMacSystemFon
     </div>
   </div>
 
+  <!-- Settings sheet -->
+  <div class="actionSheet" id="settingsSheet">
+    <div style="padding:16px 20px 8px;border-bottom:1px solid #222">
+      <div style="color:#888;font-size:10px;letter-spacing:2px">STORAGE</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px">
+        <span style="color:#aaa;font-size:13px">Items stored</span>
+        <span style="color:#fff;font-size:13px" id="settingsCount">—</span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
+        <span style="color:#aaa;font-size:13px">Estimated size</span>
+        <span style="color:#fff;font-size:13px" id="settingsSize">—</span>
+      </div>
+    </div>
+    <button onclick="masterCompress()">
+      <span id="masterCompressLabel">Compress All Media</span>
+    </button>
+    <button onclick="clearAllWorks()" style="color:#e05555!important">Clear All Works</button>
+    <button onclick="closeSettings()" style="color:#888!important">Close</button>
+  </div>
+
+  <!-- Progress overlay -->
+  <div id="progressOverlay" style="position:absolute;inset:0;background:rgba(0,0,0,0.85);z-index:200;display:none;flex-direction:column;justify-content:center;align-items:center;gap:16px">
+    <div style="color:white;font-size:13px;letter-spacing:1px" id="progressLabel">COMPRESSING…</div>
+    <div style="width:200px;height:3px;background:#222;border-radius:2px;overflow:hidden">
+      <div id="progressBar" style="height:100%;background:white;width:0%;transition:width .3s ease;border-radius:2px"></div>
+    </div>
+    <div style="color:#666;font-size:11px" id="progressSub"></div>
+  </div>
+
   <div class="actionSheet" id="actionSheet">
     <button onclick="moveUp()">Move Up</button>
     <button onclick="moveDown()">Move Down</button>
@@ -213,35 +246,150 @@ function saveStorage(){ try{ localStorage.setItem('works',JSON.stringify(works))
 function loadStorage(){ const d=localStorage.getItem('works'); if(d) works=JSON.parse(d); }
 
 /* ── Media processing ── */
+/* ── Show a processing toast ── */
+function showToast(msg){
+  let t=document.getElementById('processToast');
+  if(!t){
+    t=document.createElement('div'); t.id='processToast';
+    t.style.cssText='position:absolute;bottom:110px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,0.12);backdrop-filter:blur(10px);color:white;font-size:11px;letter-spacing:.8px;padding:7px 16px;border-radius:20px;z-index:200;transition:opacity .4s;pointer-events:none;white-space:nowrap;border:0.5px solid rgba(255,255,255,0.15)';
+    document.querySelector('.app').appendChild(t);
+  }
+  t.textContent=msg; t.style.opacity='1';
+}
+function hideToast(){
+  const t=document.getElementById('processToast');
+  if(t) t.style.opacity='0';
+}
+
+/* ── Image compression ──
+   Max dimension: 1080px (good for phone screens, ~50-70% size reduction on typical shots)
+   Quality: 0.75 JPEG — sweet spot between visible quality and file size
+   Canvas redraw strips all EXIF metadata automatically
+*/
 function compressImage(file, cb){
+  showToast('COMPRESSING…');
   const img=new Image(), r=new FileReader();
   r.onload=e=>img.src=e.target.result;
   img.onload=()=>{
+    const MAX=1080;
+    let w=img.width, h=img.height;
+    if(w>MAX||h>MAX){ const s=MAX/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
     const c=document.createElement('canvas'), ctx=c.getContext('2d');
-    const w=800, s=w/img.width; c.width=w; c.height=img.height*s;
-    ctx.drawImage(img,0,0,c.width,c.height); cb(c.toDataURL('image/jpeg',0.7));
+    c.width=w; c.height=h;
+    ctx.drawImage(img,0,0,w,h);
+    hideToast();
+    cb(c.toDataURL('image/jpeg',0.75));
   };
   r.readAsDataURL(file);
 }
+
+/* ── Video compression ──
+   Strategy: use MediaRecorder to re-encode the video at a capped resolution
+   and bitrate. Falls back to storing original if MediaRecorder or
+   captureStream is unsupported (e.g. older Safari).
+   Target: 720p max, 1.5 Mbps video + 128 kbps audio → ~80% size reduction
+   on typical phone footage.
+*/
+function compressVideo(file, cb){
+  showToast('COMPRESSING VIDEO…');
+
+  // Build object URL so the video element can stream it without full base64 load
+  const objURL = URL.createObjectURL(file);
+  const vid = document.createElement('video');
+  vid.src = objURL; vid.muted = true; vid.playsInline = true;
+  vid.crossOrigin = 'anonymous';
+
+  vid.addEventListener('loadedmetadata', () => {
+    // Scale down to max 720p
+    const MAX = 720;
+    let vw = vid.videoWidth, vh = vid.videoHeight;
+    if(vw > MAX || vh > MAX){ const s = MAX / Math.max(vw,vh); vw = Math.round(vw*s); vh = Math.round(vh*s); }
+
+    // Check support
+    const canvas = document.createElement('canvas');
+    canvas.width = vw; canvas.height = vh;
+    const ctx = canvas.getContext('2d');
+
+    const mimeTypes = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
+    const mime = mimeTypes.find(m => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || null;
+
+    if(!mime || !canvas.captureStream){
+      // Fallback: no re-encoding, just extract thumb and store original as base64
+      showToast('READING VIDEO…');
+      const fr = new FileReader();
+      fr.onload = e => { URL.revokeObjectURL(objURL); extractThumb(e.target.result, thumb => { hideToast(); cb(e.target.result, thumb); }); };
+      fr.readAsDataURL(file);
+      return;
+    }
+
+    const stream = canvas.captureStream(30);
+
+    // Try to add audio from the video
+    try {
+      const actx = new AudioContext();
+      const src = actx.createMediaElementSource(vid);
+      const dest = actx.createMediaStreamDestination();
+      src.connect(dest); src.connect(actx.destination);
+      dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+    } catch(e){ /* audio not available — video only */ }
+
+    const chunks = [];
+    const mr = new MediaRecorder(stream, {
+      mimeType: mime,
+      videoBitsPerSecond: 1_500_000,
+      audioBitsPerSecond: 128_000
+    });
+
+    mr.ondataavailable = e => { if(e.data.size>0) chunks.push(e.data); };
+    mr.onstop = () => {
+      URL.revokeObjectURL(objURL);
+      const blob = new Blob(chunks, {type: mime.split(';')[0]});
+      const fr = new FileReader();
+      fr.onload = e => {
+        extractThumb(e.target.result, thumb => { hideToast(); cb(e.target.result, thumb); });
+      };
+      fr.readAsDataURL(blob);
+    };
+
+    // Draw each frame to canvas while video plays
+    let rafId;
+    function drawFrame(){
+      if(vid.paused||vid.ended){ mr.stop(); return; }
+      ctx.drawImage(vid, 0, 0, vw, vh);
+      rafId = requestAnimationFrame(drawFrame);
+    }
+
+    mr.start(100); // collect chunks every 100ms
+    vid.play().then(()=>{ drawFrame(); });
+
+    // Safety: stop if video ends or stalls
+    vid.addEventListener('ended', ()=>{ cancelAnimationFrame(rafId); if(mr.state==='recording') mr.stop(); });
+  });
+
+  vid.load();
+}
+
+/* Extract first-frame square thumbnail from a base64 video src */
+function extractThumb(src, cb){
+  const v = document.createElement('video');
+  v.src = src; v.muted = true; v.playsInline = true;
+  v.addEventListener('loadeddata', ()=> v.currentTime = 0.1);
+  v.addEventListener('seeked', ()=>{
+    const c = document.createElement('canvas'); c.width=400; c.height=400;
+    const ctx = c.getContext('2d'), vw=v.videoWidth, vh=v.videoHeight, side=Math.min(vw,vh);
+    ctx.drawImage(v,(vw-side)/2,(vh-side)/2,side,side,0,0,400,400);
+    cb(c.toDataURL('image/jpeg',0.75));
+  },{once:true});
+  v.load();
+}
+
 function processVideo(file, cb){
-  const r=new FileReader();
-  r.onload=e=>{
-    const src=e.target.result, vid=document.createElement('video');
-    vid.src=src; vid.muted=true; vid.playsInline=true;
-    vid.addEventListener('loadeddata',()=>vid.currentTime=0.1);
-    vid.addEventListener('seeked',()=>{
-      const c=document.createElement('canvas'); c.width=400; c.height=400;
-      const ctx=c.getContext('2d'), vw=vid.videoWidth, vh=vid.videoHeight, side=Math.min(vw,vh);
-      ctx.drawImage(vid,(vw-side)/2,(vh-side)/2,side,side,0,0,400,400);
-      cb(src, c.toDataURL('image/jpeg',0.7));
-    },{once:true});
-    vid.load();
-  };
-  r.readAsDataURL(file);
+  compressVideo(file, (src, thumb) => cb({type:'video', src, thumb}));
 }
+
 function processFile(file, cb){
-  if(file.type.startsWith('video/')) processVideo(file,(src,thumb)=>cb({type:'video',src,thumb}));
-  else compressImage(file,src=>cb({type:'image',src}));
+  if(file.type.startsWith('video/')) processVideo(file, cb);
+  else compressImage(file, src => cb({type:'image', src}));
 }
 
 /* ── Paging ── */
@@ -525,6 +673,134 @@ function attachCardGestures(card, ri){
 
   card.addEventListener('dblclick',()=>{ if(!didLong) openViewer(ri); });
 }
+
+/* ── addBtn: tap = add, long-press = settings ── */
+(()=>{
+  const btn = document.getElementById('addBtn');
+  let pressTimer, didLong = false;
+  btn.addEventListener('touchstart', e=>{
+    didLong = false;
+    pressTimer = setTimeout(()=>{ didLong=true; openSettings(); }, 600);
+  },{passive:true});
+  btn.addEventListener('touchend', ()=>{
+    clearTimeout(pressTimer);
+    if(!didLong) showTypePicker();
+  },{passive:true});
+  btn.addEventListener('mousedown', ()=>{ didLong=false; pressTimer=setTimeout(()=>{ didLong=true; openSettings(); },600); });
+  btn.addEventListener('mouseup', ()=>{ clearTimeout(pressTimer); });
+  btn.addEventListener('click', ()=>{ if(!didLong) showTypePicker(); });
+})();
+
+function openSettings(){
+  // Update counts
+  const raw = localStorage.getItem('works') || '[]';
+  const bytes = new Blob([raw]).size;
+  const kb = (bytes/1024).toFixed(0);
+  const mb = (bytes/1024/1024).toFixed(2);
+  document.getElementById('settingsCount').textContent = works.length + (works.length===1?' item':' items');
+  document.getElementById('settingsSize').textContent = bytes > 1024*1024 ? mb+' MB' : kb+' KB';
+  document.getElementById('masterCompressLabel').textContent = 'Compress All Media';
+  document.getElementById('settingsSheet').classList.add('show');
+}
+function closeSettings(){
+  document.getElementById('settingsSheet').classList.remove('show');
+}
+function clearAllWorks(){
+  if(!confirm('Delete all works? This cannot be undone.')) return;
+  works=[]; saveStorage(); render(); closeSettings();
+}
+
+/* ── Master compress ── */
+async function masterCompress(){
+  if(!works.length){ alert('No works to compress.'); return; }
+  closeSettings();
+
+  const overlay  = document.getElementById('progressOverlay');
+  const label    = document.getElementById('progressLabel');
+  const bar      = document.getElementById('progressBar');
+  const sub      = document.getElementById('progressSub');
+  overlay.style.display='flex';
+
+  const before = new Blob([localStorage.getItem('works')||'']).size;
+  let done = 0;
+
+  // Flatten all compressible items
+  // Each entry: { workIndex, itemIndex|null, type }
+  // itemIndex null = single work, itemIndex = collection sub-item
+  const tasks = [];
+  works.forEach((w,wi)=>{
+    if(w.type==='collection'){
+      w.items.forEach((it,ii)=> tasks.push({wi,ii,it}));
+    } else {
+      tasks.push({wi,ii:null,it:w});
+    }
+  });
+
+  const total = tasks.length;
+
+  function setProgress(n, msg){
+    bar.style.width = Math.round((n/total)*100)+'%';
+    label.textContent = 'COMPRESSING '+n+' / '+total;
+    sub.textContent = msg||'';
+  }
+
+  for(const {wi,ii,it} of tasks){
+    if(it.type==='image'){
+      setProgress(done, 'image…');
+      await new Promise(resolve=>{
+        recompressImageSrc(it.src, newSrc=>{
+          if(ii===null) works[wi].src = newSrc;
+          else works[wi].items[ii].src = newSrc;
+          resolve();
+        });
+      });
+    } else if(it.type==='video'){
+      // For video we recompress the thumb (can't re-encode stored base64 video easily)
+      setProgress(done, 'video thumbnail…');
+      await new Promise(resolve=>{
+        recompressImageSrc(it.thumb, newThumb=>{
+          if(ii===null) works[wi].thumb = newThumb;
+          else works[wi].items[ii].thumb = newThumb;
+          resolve();
+        });
+      });
+    }
+    done++;
+    setProgress(done, '');
+    await tick(); // let UI breathe
+  }
+
+  saveStorage();
+  render();
+
+  const after = new Blob([localStorage.getItem('works')||'']).size;
+  const savedKB = ((before-after)/1024).toFixed(0);
+  const savedPct = before>0 ? Math.round((1-after/before)*100) : 0;
+
+  overlay.style.display='none';
+  bar.style.width='0%';
+
+  // Show result toast
+  showToast(savedPct>0 ? `SAVED ${savedKB} KB (${savedPct}%)` : 'ALREADY OPTIMISED');
+  setTimeout(hideToast, 3000);
+}
+
+/* Re-compress an already base64 image src through canvas */
+function recompressImageSrc(src, cb){
+  const img = new Image();
+  img.onload = ()=>{
+    const MAX=1080;
+    let w=img.width, h=img.height;
+    if(w>MAX||h>MAX){ const s=MAX/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
+    const c=document.createElement('canvas'), ctx=c.getContext('2d');
+    c.width=w; c.height=h;
+    ctx.drawImage(img,0,0,w,h);
+    cb(c.toDataURL('image/jpeg',0.72));
+  };
+  img.src = src;
+}
+
+function tick(){ return new Promise(r=>setTimeout(r,0)); }
 
 /* ── CRUD ── */
 function moveUp(){ if(selectedIndex>0){[works[selectedIndex],works[selectedIndex-1]]=[works[selectedIndex-1],works[selectedIndex]];saveStorage();render();}closeSheet(); }
