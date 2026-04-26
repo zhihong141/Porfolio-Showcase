@@ -749,18 +749,45 @@ function attachCardGestures(card, ri){
 /* ── addBtn: tap = add, long-press = settings ── */
 (()=>{
   const btn = document.getElementById('addBtn');
-  let pressTimer, didLong = false;
+  let pressTimer = null;
+  let didLong    = false;
+  let isTouching = false; // flag to stop click from double-firing on mobile
+
+  // ── Touch (mobile) ──
   btn.addEventListener('touchstart', e=>{
-    didLong = false;
-    pressTimer = setTimeout(()=>{ didLong=true; openSettings(); }, 600);
+    isTouching = true;
+    didLong    = false;
+    pressTimer = setTimeout(()=>{
+      didLong = true;
+      openSettings();
+    }, 650);
   },{passive:true});
-  btn.addEventListener('touchend', ()=>{
+
+  btn.addEventListener('touchmove', ()=>{
+    // Any movement = cancel long-press (user might be scrolling)
     clearTimeout(pressTimer);
-    if(!didLong) showTypePicker();
   },{passive:true});
-  btn.addEventListener('mousedown', ()=>{ didLong=false; pressTimer=setTimeout(()=>{ didLong=true; openSettings(); },600); });
+
+  btn.addEventListener('touchend', e=>{
+    clearTimeout(pressTimer);
+    e.preventDefault(); // stops the synthetic click that follows touchend
+    if(!didLong) showTypePicker();
+    didLong = false;
+    setTimeout(()=>{ isTouching = false; }, 500);
+  },{passive:false});
+
+  // ── Mouse (desktop only, ignored if touch fired) ──
+  btn.addEventListener('mousedown', ()=>{
+    if(isTouching) return;
+    didLong    = false;
+    pressTimer = setTimeout(()=>{ didLong=true; openSettings(); }, 650);
+  });
   btn.addEventListener('mouseup', ()=>{ clearTimeout(pressTimer); });
-  btn.addEventListener('click', ()=>{ if(!didLong) showTypePicker(); });
+  btn.addEventListener('click', ()=>{
+    if(isTouching) return; // already handled by touchend
+    if(!didLong) showTypePicker();
+    didLong = false;
+  });
 })();
 
 function openSettings(){
