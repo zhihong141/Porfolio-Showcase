@@ -357,91 +357,14 @@ function compressImage(file, cb){
   r.readAsDataURL(file);
 }
 
-/* ── Video compression ──
-   Strategy: use MediaRecorder to re-encode the video at a capped resolution
-   and bitrate. Falls back to storing original if MediaRecorder or
-   captureStream is unsupported (e.g. older Safari).
-   Target: 720p max, 1.5 Mbps video + 128 kbps audio → ~80% size reduction
-   on typical phone footage.
+/* ── Video processing ──
+   Browser-based video re-encoding (MediaRecorder) reliably strips audio on
+   mobile because Web Audio API cannot tap into a video element's audio track
+   without user-gesture restrictions on iOS/Android.
+   Instead: store the original video file untouched (phone camera already
+   produces efficient h264/hevc), only generate a compressed thumbnail.
+   The "Compress All" function will also skip re-encoding videos for this reason.
 */
-function compressVideo(file, cb){
-  showToast('COMPRESSING VIDEO…');
-
-  // Build object URL so the video element can stream it without full base64 load
-  const objURL = URL.createObjectURL(file);
-  const vid = document.createElement('video');
-  vid.src = objURL; vid.muted = true; vid.playsInline = true;
-  vid.crossOrigin = 'anonymous';
-
-  vid.addEventListener('loadedmetadata', () => {
-    // Scale down to max 720p
-    const MAX = 720;
-    let vw = vid.videoWidth, vh = vid.videoHeight;
-    if(vw > MAX || vh > MAX){ const s = MAX / Math.max(vw,vh); vw = Math.round(vw*s); vh = Math.round(vh*s); }
-
-    // Check support
-    const canvas = document.createElement('canvas');
-    canvas.width = vw; canvas.height = vh;
-    const ctx = canvas.getContext('2d');
-
-    const mimeTypes = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
-    const mime = mimeTypes.find(m => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || null;
-
-    if(!mime || !canvas.captureStream){
-      // Fallback: no re-encoding, just extract thumb and store original as base64
-      showToast('READING VIDEO…');
-      const fr = new FileReader();
-      fr.onload = e => { URL.revokeObjectURL(objURL); extractThumb(e.target.result, thumb => { hideToast(); cb(e.target.result, thumb); }); };
-      fr.readAsDataURL(file);
-      return;
-    }
-
-    const stream = canvas.captureStream(30);
-
-    // Try to add audio from the video
-    try {
-      const actx = new AudioContext();
-      const src = actx.createMediaElementSource(vid);
-      const dest = actx.createMediaStreamDestination();
-      src.connect(dest); src.connect(actx.destination);
-      dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
-    } catch(e){ /* audio not available — video only */ }
-
-    const chunks = [];
-    const mr = new MediaRecorder(stream, {
-      mimeType: mime,
-      videoBitsPerSecond: 1_500_000,
-      audioBitsPerSecond: 128_000
-    });
-
-    mr.ondataavailable = e => { if(e.data.size>0) chunks.push(e.data); };
-    mr.onstop = () => {
-      URL.revokeObjectURL(objURL);
-      const blob = new Blob(chunks, {type: mime.split(';')[0]});
-      const fr = new FileReader();
-      fr.onload = e => {
-        extractThumb(e.target.result, thumb => { hideToast(); cb(e.target.result, thumb); });
-      };
-      fr.readAsDataURL(blob);
-    };
-
-    // Draw each frame to canvas while video plays
-    let rafId;
-    function drawFrame(){
-      if(vid.paused||vid.ended){ mr.stop(); return; }
-      ctx.drawImage(vid, 0, 0, vw, vh);
-      rafId = requestAnimationFrame(drawFrame);
-    }
-
-    mr.start(100); // collect chunks every 100ms
-    vid.play().then(()=>{ drawFrame(); });
-
-    // Safety: stop if video ends or stalls
-    vid.addEventListener('ended', ()=>{ cancelAnimationFrame(rafId); if(mr.state==='recording') mr.stop(); });
-  });
-
-  vid.load();
-}
 
 /* Extract first-frame square thumbnail from a base64 video src */
 function extractThumb(src, cb){
@@ -458,7 +381,16 @@ function extractThumb(src, cb){
 }
 
 function processVideo(file, cb){
-  compressVideo(file, (src, thumb) => cb({type:'video', src, thumb}));
+  showToast('READING VIDEO…');
+  const r = new FileReader();
+  r.onload = e => {
+    const src = e.target.result;
+    extractThumb(src, thumb => {
+      hideToast();
+      cb({type:'video', src, thumb});
+    });
+  };
+  r.readAsDataURL(file);
 }
 
 function processFile(file, cb){
